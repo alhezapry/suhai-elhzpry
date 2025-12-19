@@ -1,0 +1,29 @@
+# مفاتيح API وبيانات حساسة
+.env
+.env.local
+*.key
+*.pem
+*.cert
+
+# ملفات بايثون المؤقتة
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# سجلات النظام
+*.log
+logs/
+
+# نظام التشغيل
+.DS_Store
+Thumbs.db
+
+# بيئات Python
+venv/
+env/
+.venv/

@@ -2,145 +2,157 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import os
+from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)  # هذا يحل مشكلة CORS للأبد!
+CORS(app)
 
-# سيأخذ المفتاح من متغير البيئة على Render.com
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
-MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
+# استرجاع مفتاح API من متغير البيئة الآمن - لا تضعه هنا مباشرة!
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+# إذا لم يتم ضبط المفتاح، نستخدم قيمة فارغة وسيفشل الاتصال بوضوح
+if not GROQ_API_KEY:
+    print("⚠️  تحذير: لم يتم تعيين متغير البيئة 'GROQ_API_KEY'. سيفشل الاتصال بـ Groq API.")
 
 @app.route('/')
 def home():
     return jsonify({
-        "status": "Yaqeen AI Proxy Server",
-        "service": "Yemeni AI Assistant - يقين AI",
+        "status": "Yaqeen AI Proxy is running!",
+        "service": "Yemeni AI Assistant - يقين AI (مدعوم بـ Groq)",
         "developer": "سهيل الهزبري",
         "endpoints": {
             "/chat": "POST - إرسال رسالة للذكاء الاصطناعي",
             "/health": "GET - فحص حالة الخادم"
-        }
+        },
+        "provider": "Groq Cloud"
     })
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({
         "status": "healthy",
-        "message": "✅ خادم يقين AI يعمل بنجاح",
-        "timestamp": "2023-01-01T00:00:00Z"  # سيتغير تلقائياً
+        "message": "✅ خادم يقين AI يعمل بنجاح مع تكامل Groq",
+        "timestamp": datetime.now().isoformat()
     })
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    """نقطة النهاية الرئيسية للدردشة مع الذكاء الاصطناعي"""
+    """النقطة الرئيسية للدردشة مع الذكاء الاصطناعي عبر Groq API"""
     try:
-        # الحصول على البيانات من الطلب
-        data = request.json
-        
-        if not data:
+        # 1. التحقق من وجود مفتاح API
+        if not GROQ_API_KEY:
             return jsonify({
                 "success": False,
-                "error": "لم يتم إرسال بيانات"
-            }), 400
-        
-        user_message = data.get('message', '').strip()
-        
-        if not user_message:
-            return jsonify({
-                "success": False,
-                "error": "الرسالة فارغة. الرجاء كتابة سؤال."
-            }), 400
-        
-        if not HF_TOKEN:
-            return jsonify({
-                "success": False,
-                "error": "مفتاح API غير مضبوط. الرجاء إضافة HF_TOKEN في متغيرات البيئة."
+                "error": "مفتاح API غير مضبوط. الرجاء تعيين متغير البيئة 'GROQ_API_KEY' على Render."
             }), 500
-        
-        # إعداد الطلب لـ Hugging Face API
+
+        # 2. استقبال ومعالجة بيانات المستخدم
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "لم يتم إرسال بيانات."}), 400
+
+        user_message = data.get('message', '').strip()
+        if not user_message:
+            return jsonify({"success": False, "error": "الرسالة فارغة. الرجاء كتابة سؤال."}), 400
+
+        # 3. إعداد طلب Groq API (متوافق مع OpenAI)
         headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
+            "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json"
         }
-        
-        # نص الذكاء الاصطناعي (مع توجيه للرد بالعربية)
-        prompt = f"""أنت مساعد ذكي يمني اسمه 'يقين AI'. 
-        مهمتك هي مساعدة المستخدمين باللغة العربية.
-        كن مفيداً، دقيقاً، ومحترماً مع إضافة لمسات يمنية أحياناً.
-        
-        سؤال المستخدم: {user_message}
-        
-        رَدٌّ المساعد (باللغة العربية):"""
-        
+
         payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": 500,
-                "temperature": 0.7,
-                "return_full_text": False
-            }
+            "model": "mixtral-8x7b-32768",  # نموذج Mixtral سريع وقوي من Groq
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "أنت مساعد ذكي يمني اسمه 'يقين AI'. مهمتك هي مساعدة المستخدمين بلغة عربية واضحة ومفيدة مع الحفاظ على الود والاحترام. أضف لمسات يمنية ودية في ردودك عندما يكون ذلك مناسباً."
+                },
+                {
+                    "role": "user",
+                    "content": user_message
+                }
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.7,
+            "stream": False
         }
-        
-        # إرسال الطلب إلى Hugging Face
+
+        # 4. إرسال الطلب إلى Groq API
         response = requests.post(
-            f"https://api-inference.huggingface.co/models/{MODEL}",
+            "https://api.groq.com/openai/v1/chat/completions",
             headers=headers,
             json=payload,
-            timeout=30
+            timeout=45  # مهلة أطول قليلاً
         )
-        
-        # معالجة الرد
+
+        # 5. معالجة الرد من Groq
         if response.status_code == 200:
             result = response.json()
-            
-            if isinstance(result, list) and len(result) > 0:
-                ai_response = result[0].get('generated_text', 'لم أتمكن من توليد رد.')
-            else:
-                ai_response = "عذراً، لم أتلقَ رداً من النموذج."
-            
+            ai_response = result["choices"][0]["message"]["content"]
+
             return jsonify({
                 "success": True,
                 "text": ai_response,
-                "provider": MODEL,
-                "tokens_used": "unknown"
+                "provider": "Groq (mixtral-8x7b-32768)",
+                "timestamp": datetime.now().isoformat(),
+                "note": "مدعوم بـ Groq Cloud - واجهة متوافقة مع OpenAI"
             })
-            
-        elif response.status_code == 503:
-            # النموذج قيد التحميل
+
+        elif response.status_code == 429:
             return jsonify({
                 "success": False,
-                "error": "النموذج قيد التحميل. يرجى المحاولة مرة أخرى خلال 20-30 ثانية.",
-                "status_code": 503
-            }), 200
-            
+                "error": "تم تجاوز الحد المسموح من الطلبات للمفتاح المجاني. يرجى المحاولة لاحقاً.",
+                "status_code": 429
+            }), 429
+
         else:
+            # محاولة إرجاع رسالة الخطأ من Groq إن وجدت
+            error_detail = "تفاصيل غير متاحة"
+            try:
+                error_json = response.json()
+                if 'error' in error_json and 'message' in error_json['error']:
+                    error_detail = error_json['error']['message']
+            except:
+                error_detail = response.text[:200] if response.text else "لا يوجد نص للخطأ"
+
             return jsonify({
                 "success": False,
-                "error": f"خطأ من خادم Hugging Face: {response.status_code}",
-                "details": response.text[:200] if response.text else ""
-            }), 200
-            
+                "error": f"خطأ من خادم Groq: {response.status_code}",
+                "details": error_detail,
+                "status_code": response.status_code
+            }), response.status_code
+
     except requests.exceptions.Timeout:
         return jsonify({
             "success": False,
-            "error": "انتهت مهلة الانتظار. الخادم مشغول جداً."
+            "error": "انتهت مهلة الاتصال بخادم Groq. يرجى المحاولة مرة أخرى."
         }), 408
-        
+
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": f"خطأ داخلي: {str(e)[:100]}"
+            "error": f"حدث خطأ غير متوقع في الخادم: {str(e)[:150]}"
         }), 500
 
-@app.route('/test', methods=['GET'])
-def test():
-    """نقطة نهاية للاختبار السريع"""
-    return jsonify({
-        "success": True,
-        "message": "✅ خادم يقين AI يعمل!",
-        "next_step": "أرسل POST request إلى /chat مع {message: 'نصك هنا'}"
-    })
+@app.route('/models', methods=['GET'])
+def list_models():
+    """نقطة نهاية إضافية لسرد النماذج المتاحة (للاطلاع فقط، قد تتطلب صلاحيات)"""
+    if not GROQ_API_KEY:
+        return jsonify({"success": False, "error": "مفتاح API مطلوب"}), 401
+
+    try:
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        response = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=30)
+        if response.status_code == 200:
+            return jsonify({"success": True, "models": response.json()})
+        else:
+            return jsonify({"success": False, "error": f"خطأ: {response.status_code}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
+    # تحذير في السجلات إذا لم يتم ضبط المفتاح
+    if not GROQ_API_KEY:
+        print("❌ تحذير حرج: متغير البيئة 'GROQ_API_KEY' غير مضبوط. لن تعمل نقطة /chat.")
     app.run(host='0.0.0.0', port=port, debug=False)
